@@ -49,9 +49,12 @@ st.set_page_config(page_title="Location ID Search", layout="wide")
 st.title("🗺️ GLOBALISE places dataset search")
 st.markdown("Search through the GLOBALISE places data using fuzzy search.")
 
+if "locations_df" not in st.session_state:
+    st.session_state.locations_df = pd.read_csv('locationdata.csv')
+
 # Load the CSV file
 try:
-    df = pd.read_csv('locationdata.csv')
+    df = st.session_state.locations_df
     # Clean up column names (remove extra spaces)
     df.columns = df.columns.str.strip()
     
@@ -130,12 +133,30 @@ except FileNotFoundError:
 except Exception as e:
     st.error(f"❌ Error loading data: {str(e)}")
 
-else:
-    st.info("👆 Please upload your location CSV file to start searching")
-    
+with st.expander("Upload additional data"):    
+    uploaded_file = st.file_uploader("Upload your locationdata.csv file", type=['csv'])
+    if uploaded_file is not None:
+        try:
+            extra_df = pd.read_csv(uploaded_file)
+            # Optional: clean up column names like before
+            extra_df.columns = extra_df.columns.str.strip()
+            extra_df = extra_df.loc[:, ~extra_df.columns.str.contains('^Unnamed')]
+            
+            # Combine with existing data and reset index
+            st.session_state.locations_df = pd.concat(
+                [st.session_state.locations_df, extra_df],
+                ignore_index=True
+            )
+            
+            st.success(f"✅ Uploaded {len(extra_df)} new records. Total: {len(st.session_state.locations_df)}")
+            
+        except Exception as e:
+            st.error(f"❌ Error loading data: {str(e)}")
+
+      
     # Show example
     st.markdown("### Example Data Format")
     st.code("""glob_id,label,pref_label,label_type,Latitude,Longitude
-GLOB_844,Abarkūh,Abarkūh,PREF,31.1289,53.2824
-GLOB_844,Abercouh,Abarkūh,ALT,31.1289,53.2824
-GLOB_1,Abubu,Abubu,PREF,-3.692153,128.789113""")
+    GLOB_844,Abarkūh,Abarkūh,PREF,31.1289,53.2824
+    GLOB_844,Abercouh,Abarkūh,ALT,31.1289,53.2824
+    GLOB_1,Abubu,Abubu,PREF,-3.692153,128.789113""")
