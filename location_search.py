@@ -183,6 +183,7 @@ try:
                     # Column 4: Search Transcriptions button
                     with col4:
                         terms = variants + [best_match['pref_label']]
+                        terms = set(terms)
                         base_url = "https://transcriptions.globalise.huygens.knaw.nl/?query[fullText]="
                         query = "%20OR%20".join([f'"{term}"' for term in terms])
                         full_url = f"{base_url}{query}"
