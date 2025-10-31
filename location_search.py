@@ -8,6 +8,9 @@ def fuzzy_match_score(s1, s2):
     #returns similarity score between two strings
     return SequenceMatcher(None, s1.lower(), s2.lower()).ratio()
 
+def generate_search_link():
+    ...
+
 def create_map(df):
     # Clean and prepare the data
     # Remove rows where Latitude is "Not available" or invalid
@@ -160,21 +163,34 @@ try:
                 best_match = id_results.iloc[0]
                 
                 with st.container():
-                    col1, col2, col3 = st.columns([2, 2, 1])
+                    col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
                     
+                    # Column 1: ID and Preferred Name
                     with col1:
                         st.markdown(f"**ID:** `{glob_id}`")
                         st.markdown(f"**Preferred Name:** {best_match['pref_label']}")
                     
+                    # Column 2: All variants
                     with col2:
-                        # Show all variants for this ID
                         variants = id_results['label'].tolist()
                         st.markdown(f"**Variants:** {', '.join(variants)}")
                     
+                    # Column 3: Match percentage
                     with col3:
                         score_pct = int(best_match['score'] * 100)
                         st.metric("Match", f"{score_pct}%")
                     
+                    # Column 4: Search Transcriptions button
+                    with col4:
+                        terms = variants + [best_match['pref_label']]
+                        base_url = "https://transcriptions.globalise.huygens.knaw.nl/?query[fullText]="
+                        query = "%20OR%20".join([f'"{term}"' for term in terms])
+                        full_url = f"{base_url}{query}"
+                        full_url = full_url.replace(" ", "%20")
+                        
+                        # HTML button
+                        st.markdown(f"[Search Transcriptions]({full_url})")
+
                     # Show coordinates
                     st.caption(f"📍 Coordinates: {best_match['Latitude']}, {best_match['Longitude']}")
                     
