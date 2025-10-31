@@ -114,7 +114,7 @@ def search_locations(df, query, top_n=10):
     
     return results_df
 
-st.set_page_config(page_title="Location ID Search", layout="wide")
+st.set_page_config(page_title="GLOBALISE places search", layout="wide")
 
 st.title("🗺️ GLOBALISE places dataset search")
 st.markdown("Search through the GLOBALISE places data using fuzzy search.")
