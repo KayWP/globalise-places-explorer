@@ -116,8 +116,12 @@ st.set_page_config(page_title="Location ID Search", layout="wide")
 st.title("🗺️ GLOBALISE places dataset search")
 st.markdown("Search through the GLOBALISE places data using fuzzy search.")
 
+# Initialize session state variables
 if "locations_df" not in st.session_state:
     st.session_state.locations_df = pd.read_csv('locationdata.csv')
+
+if "uploaded_files_processed" not in st.session_state:
+    st.session_state.uploaded_files_processed = set()
 
 # Load the CSV file
 try:
@@ -206,29 +210,39 @@ except Exception as e:
 with st.expander("Upload additional data"):    
     uploaded_file = st.file_uploader("Upload your locationdata.csv file", type=['csv'])
     if uploaded_file is not None:
-        try:
-            extra_df = pd.read_csv(uploaded_file)
-            # Optional: clean up column names like before
-            extra_df.columns = extra_df.columns.str.strip()
-            extra_df = extra_df.loc[:, ~extra_df.columns.str.contains('^Unnamed')]
-            
-            # Combine with existing data and reset index
-            st.session_state.locations_df = pd.concat(
-                [st.session_state.locations_df, extra_df],
-                ignore_index=True
-            )
-            
-            st.success(f"✅ Uploaded {len(extra_df)} new records. Total: {len(st.session_state.locations_df)}")
-            
-        except Exception as e:
-            st.error(f"❌ Error loading data: {str(e)}")
-
-      
+        # Create a unique identifier for this file
+        file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+        
+        # Only process if we haven't seen this file before
+        if file_id not in st.session_state.uploaded_files_processed:
+            try:
+                extra_df = pd.read_csv(uploaded_file)
+                # Optional: clean up column names like before
+                extra_df.columns = extra_df.columns.str.strip()
+                extra_df = extra_df.loc[:, ~extra_df.columns.str.contains('^Unnamed')]
+                
+                # Combine with existing data and reset index
+                st.session_state.locations_df = pd.concat(
+                    [st.session_state.locations_df, extra_df],
+                    ignore_index=True
+                )
+                
+                # Mark this file as processed
+                st.session_state.uploaded_files_processed.add(file_id)
+                
+                st.success(f"✅ Uploaded {len(extra_df)} new records. Total: {len(st.session_state.locations_df)}")
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"❌ Error loading data: {str(e)}")
+        else:
+            st.info(f"ℹ️ File '{uploaded_file.name}' already uploaded ({len(st.session_state.locations_df)} total records)")
+    
     # Show example
     st.markdown("### Example Data Format")
     st.code("""glob_id,label,pref_label,label_type,Latitude,Longitude
-    GLOB_844,Abarkūh,Abarkūh,PREF,31.1289,53.2824
-    GLOB_844,Abercouh,Abarkūh,ALT,31.1289,53.2824
-    GLOB_1,Abubu,Abubu,PREF,-3.692153,128.789113""")
+GLOB_844,Abarkūh,Abarkūh,PREF,31.1289,53.2824
+GLOB_844,Abercouh,Abarkūh,ALT,31.1289,53.2824
+GLOB_1,Abubu,Abubu,PREF,-3.692153,128.789113""")
 
 st.markdown("App by [Kay Pepping](https://github.com/KayWP/). Improvements and bug report can be suggested on Github.")
