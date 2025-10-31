@@ -42,7 +42,10 @@ def create_map(df):
             data=filtered_df,
             get_position=['Longitude', 'Latitude'],
             get_color=[255, 0, 0, 160],
-            get_radius=50000,
+            get_radius=5000,  # Reduced base radius
+            gradius_scale=1,  # Will scale with zoom
+            radius_min_pixels=3,  # Minimum size in pixels
+            radius_max_pixels=30,  # Maximum size in pixels
             pickable=True,
             auto_highlight=True
         )
@@ -227,3 +230,5 @@ with st.expander("Upload additional data"):
     GLOB_844,Abarkūh,Abarkūh,PREF,31.1289,53.2824
     GLOB_844,Abercouh,Abarkūh,ALT,31.1289,53.2824
     GLOB_1,Abubu,Abubu,PREF,-3.692153,128.789113""")
+
+st.markdown("App by [Kay Pepping](https://github.com/KayWP/). Improvements and bug report can be suggested on Github.")
