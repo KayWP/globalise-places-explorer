@@ -186,7 +186,6 @@ try:
     with st.expander("👥 Who created this data?"):
         st.markdown("This application uses the data created by Dung Thuy Pham, Brecht Nijman, Ruben Land, Andy Houwer, Marc Widmer & Manjusha Kurrupath for the GLOBALISE project. It is available for download [here](https://datasets.iisg.amsterdam/dataset.xhtml?persistentId=hdl:10622/WYVERW). The full citation is:")
         st.code("""Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Houwer, Andy; Widmer, Marc; Kuruppath, Manjusha, 2025, "GLOBALISE - Places in the Dutch East India Company Archives (1602-1799)", https://hdl.handle.net/10622/WYVERW, IISH Data Collection, V1, UNF:6:ReciyJlxCaRV5CSVvIzP8g== [fileUNF]""")
-        st.markdown("The app itself was coded by [Kay Pepping](https://github.com/KayWP/). Improvements and bug report can be suggested on Github.")
     
     # Show sample data
     with st.expander("📊 View Sample Data"):
