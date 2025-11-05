@@ -1,5 +1,7 @@
 A Streamlit application for searching and exploring places from the Dutch East India Company Archives (1602-1799). This tool provides fuzzy search capabilities and interactive map visualization for the [GLOBALISE places dataset](https://hdl.handle.net/10622/WYVERW).
 
+It is currently live [here](vocdata.nl/place-search/).
+
 ## Installation
 
 ### Prerequisites
