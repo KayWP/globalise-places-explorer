@@ -57,7 +57,7 @@ def certainty_color(cert):
     }.get(str(cert).lower(), [148, 163, 184, 200])
 
 
-def create_map(df):
+def create_map(df, zoom=2):
     map_df = df.copy()
     map_df = map_df[
         pd.to_numeric(map_df["latitude"], errors="coerce").notna()
@@ -69,17 +69,23 @@ def create_map(df):
 
     if map_df.empty:
         st.info("No mappable coordinates in current data.")
-        return
+        return None
 
     map_df["color"] = map_df["coord_certainty"].apply(certainty_color)
 
+    # Drop private/list columns that can confuse pydeck's JSON serialiser
+    pdk_cols = ["glob_id", "pref_label", "types", "latitude", "longitude",
+                "coord_certainty", "parent_region_pref_label", "color"]
+    map_df = map_df[[c for c in pdk_cols if c in map_df.columns]]
+
     layer = pdk.Layer(
         "ScatterplotLayer",
+        id="places-layer",
         data=map_df,
         get_position=["longitude", "latitude"],
         get_color="color",
         get_radius=5000,
-        radius_min_pixels=3,
+        radius_min_pixels=4,
         radius_max_pixels=20,
         pickable=True,
         auto_highlight=True,
@@ -88,7 +94,7 @@ def create_map(df):
     view_state = pdk.ViewState(
         latitude=map_df["latitude"].mean(),
         longitude=map_df["longitude"].mean(),
-        zoom=2,
+        zoom=zoom,
         pitch=0,
     )
 
@@ -101,17 +107,43 @@ def create_map(df):
                 "<i>{types}</i><br/>"
                 "📍 {latitude}, {longitude}<br/>"
                 "Certainty: {coord_certainty}<br/>"
-                "Region: {parent_region_pref_label}"
+                "Region: {parent_region_pref_label}<br/>"
+                "<i style='font-size:11px;opacity:0.8'>Click to open detail view</i>"
             ),
             "style": {"color": "white", "fontSize": "13px"},
         },
     )
 
-    st.pydeck_chart(deck)
+    event = st.pydeck_chart(deck, on_select="rerun", selection_mode="single-object")
 
     st.caption(
         "🟢 Certain &nbsp;&nbsp; 🟡 Approximate &nbsp;&nbsp; 🔴 Uncertain"
     )
+
+    with st.expander("🐛 Debug: raw click event", expanded=False):
+        try:
+            st.write(event.selection)
+        except Exception as e:
+            st.write(f"Error reading selection: {e}")
+
+    # Return the glob_id of the clicked point, if any
+    try:
+        sel = event.selection
+        # selection may be a dict or an object with attribute access
+        if hasattr(sel, "objects"):
+            objects = sel.objects or {}
+        elif isinstance(sel, dict):
+            objects = sel.get("objects", {})
+        else:
+            objects = {}
+
+        # Iterate all layer keys — the exact key depends on pydeck version
+        for rows in objects.values():
+            if rows:
+                return rows[0].get("glob_id")
+    except Exception:
+        pass
+    return None
 
 
 def build_transcription_url(terms):
@@ -135,9 +167,12 @@ def load_and_normalize(df: pd.DataFrame) -> pd.DataFrame:
     for col in [
         "glob_id", "pref_label", "alt_labels", "types",
         "latitude", "longitude", "coord_certainty", "coord_remarks",
-        "overall_remarks", "ccodes", "esta_id", "geonames_id",
+        "coord_remarks_source", "coord_source",
+        "overall_remarks", "overall_remarks_source",
+        "ccodes", "esta_id", "geonames_id",
         "whg_id", "amh_id", "external_id",
-        "parent_region", "parent_region_pref_label", "SUBSET",
+        "wikidata_id", "tgn_id",
+        "parent_region", "parent_region_pref_label",
     ]:
         if col not in df.columns:
             df[col] = pd.NA
@@ -195,7 +230,7 @@ st.markdown("Search through the GLOBALISE places data using fuzzy search.")
 @st.cache_data
 def load_default():
     try:
-        raw = pd.read_excel("locationdata.xlsx")
+        raw = pd.read_excel("locationdata.xlsx", sheet_name="Sheet2 Places – Overview")
         return load_and_normalize(raw)
     except FileNotFoundError:
         return None
@@ -241,15 +276,6 @@ with st.sidebar:
             "Country code (ISO-2)", all_ccodes, placeholder="All countries"
         )
 
-        # Subset filter
-        subsets = sorted(df["SUBSET"].dropna().unique())
-        if len(subsets) > 1:
-            selected_subsets = st.multiselect(
-                "Subset", subsets, placeholder="All subsets"
-            )
-        else:
-            selected_subsets = []
-
         # Coordinate certainty filter
         cert_options = sorted(df["coord_certainty"].dropna().unique())
         selected_cert = st.multiselect(
@@ -268,7 +294,9 @@ with st.sidebar:
         if file_id not in st.session_state.uploaded_files_processed:
             try:
                 if uploaded_file.name.endswith(".xlsx"):
-                    extra_df = pd.read_excel(uploaded_file)
+                    xl = pd.ExcelFile(uploaded_file)
+                    sheet = "Sheet2 Places – Overview" if "Sheet2 Places – Overview" in xl.sheet_names else xl.sheet_names[0]
+                    extra_df = xl.parse(sheet)
                 else:
                     extra_df = pd.read_csv(uploaded_file)
                 extra_df = load_and_normalize(extra_df)
@@ -294,12 +322,13 @@ with st.sidebar:
 
     st.divider()
     st.markdown(
-        "**Example format (v2)**\n\n"
+        "**Expected format (v2)**\n\n"
+        "Multi-sheet XLSX. Primary sheet: `Sheet2 Places – Overview`.\n\n"
         "Columns: `glob_id`, `pref_label`, `alt_labels` (pipe-separated), "
         "`types`, `latitude`, `longitude`, `coord_certainty`, "
         "`coord_remarks`, `overall_remarks`, `ccodes`, `geonames_id`, "
-        "`whg_id`, `amh_id`, `external_id`, `parent_region`, "
-        "`parent_region_pref_label`, `SUBSET`"
+        "`whg_id`, `amh_id`, `external_id`, `wikidata_id`, `tgn_id`, "
+        "`parent_region`, `parent_region_pref_label`"
     )
 
 # ─────────────────────────────────────────────
@@ -328,8 +357,6 @@ if selected_ccodes:
             else False
         )
     ]
-if selected_subsets:
-    filtered_df = filtered_df[filtered_df["SUBSET"].isin(selected_subsets)]
 if selected_cert:
     filtered_df = filtered_df[
         filtered_df["coord_certainty"].isin(selected_cert)
@@ -359,9 +386,24 @@ with col_n:
         label_visibility="collapsed"
     )
 
-# Map
-with st.expander("🗺️ Map view", expanded=False):
-    create_map(filtered_df)
+# Compute results early so the map can use them
+if search_query:
+    results = search_locations(filtered_df, search_query, top_n)
+    map_data = results if not results.empty else filtered_df
+    map_zoom = 4 if (not results.empty and len(results) <= 20) else 2
+    map_label = f"🗺️ Map view — {len(results)} result(s)" if not results.empty else "🗺️ Map view"
+else:
+    results = None
+    map_data = filtered_df
+    map_zoom = 2
+    map_label = "🗺️ Map view"
+
+# Map — auto-expanded when searching
+with st.expander(map_label, expanded=bool(search_query)):
+    clicked_id = create_map(map_data, zoom=map_zoom)
+    if clicked_id:
+        st.session_state.selected_glob_id = clicked_id
+        st.rerun()
 
 st.divider()
 
@@ -400,8 +442,6 @@ if st.session_state.selected_glob_id is not None:
             st.markdown(f"**Region:** {row['parent_region_pref_label']}")
         if pd.notna(row["ccodes"]):
             st.markdown(f"**Country code:** {row['ccodes']}")
-        if pd.notna(row["SUBSET"]):
-            st.markdown(f"**Subset:** {row['SUBSET']}")
         if alts:
             st.markdown(f"**Alternative names:** {', '.join(alts)}")
 
@@ -412,6 +452,8 @@ if st.session_state.selected_glob_id is not None:
             cert_icon = "🟢" if cert == "certain" else ("🟡" if cert == "approximate" else "🔴")
             st.markdown(f"**Coordinates:** {lat:.5f}, {lon:.5f}")
             st.markdown(f"**Certainty:** {cert_icon} {cert}")
+            if pd.notna(row["coord_source"]) and str(row["coord_source"]).strip():
+                st.caption(f"Source: {row['coord_source']}")
             if pd.notna(row["coord_remarks"]) and str(row["coord_remarks"]).strip():
                 st.caption(f"_{row['coord_remarks']}_")
 
@@ -442,6 +484,14 @@ if st.session_state.selected_glob_id is not None:
         links.append(f"[🗺️ WHG]({row['whg_id']})")
     if pd.notna(row["amh_id"]) and str(row["amh_id"]).strip():
         links.append(f"[📚 AMH]({row['amh_id']})")
+    if pd.notna(row["wikidata_id"]) and str(row["wikidata_id"]).strip():
+        wikidata_val = str(row["wikidata_id"]).strip()
+        wikidata_url = wikidata_val if wikidata_val.startswith("http") else f"https://www.wikidata.org/wiki/{wikidata_val}"
+        links.append(f"[🔷 Wikidata]({wikidata_url})")
+    if pd.notna(row["tgn_id"]) and str(row["tgn_id"]).strip():
+        tgn_val = str(row["tgn_id"]).strip()
+        tgn_url = tgn_val if tgn_val.startswith("http") else f"http://vocab.getty.edu/tgn/{tgn_val}"
+        links.append(f"[🏛️ Getty TGN]({tgn_url})")
     if pd.notna(row["external_id"]) and str(row["external_id"]).startswith("http"):
         links.append(f"[🔗 External]({row['external_id']})")
     st.markdown("  ·  ".join(links))
@@ -453,9 +503,7 @@ if st.session_state.selected_glob_id is not None:
 # ─────────────────────────────────────────────
 
 if search_query:
-    results = search_locations(filtered_df, search_query, top_n)
-
-    if results.empty:
+    if results is None or results.empty:
         st.warning("No matches found. Try a different search term.")
     else:
         st.markdown(f"### {len(results)} result(s) for **{search_query}**")
