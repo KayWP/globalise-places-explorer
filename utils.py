@@ -61,6 +61,11 @@ def build_transcription_url(terms):
     return (base + query).replace(" ", "%20")
 
 
+def build_transcription_query(terms):
+    """Returns a query string with all labels joined by AND."""
+    return " AND ".join(f'"{t}"' for t in terms)
+
+
 def load_and_normalize(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
@@ -102,72 +107,41 @@ def init_session_state():
         st.session_state.selected_glob_id = None
 
 
-def render_sidebar(df):
+def render_sidebar():
     """Renders sidebar filters + uploader. Returns (selected_types, selected_ccodes, selected_cert)."""
     with st.sidebar:
-        st.header("Filters")
-
-        selected_types, selected_ccodes, selected_cert = [], [], []
-
         if df is not None:
-            all_types = sorted({t for lst in df["_type_list"] for t in lst if t})
-            selected_types = st.multiselect("Place type", all_types, placeholder="All types")
-
-            all_ccodes = sorted(
-                {c.strip() for raw in df["ccodes"].dropna() for c in str(raw).split("|") if c.strip()}
-            )
-            selected_ccodes = st.multiselect("Country code (ISO-2)", all_ccodes, placeholder="All countries")
-
-            cert_options = sorted(df["coord_certainty"].dropna().unique())
-            selected_cert = st.multiselect("Coordinate certainty", cert_options, placeholder="All")
-
+            st.metric("Total records", f"{len(df):,}")
             st.divider()
 
-        st.subheader("Upload data")
-        uploaded_file = st.file_uploader("CSV or XLSX file", type=["csv", "xlsx"])
-        if uploaded_file is not None:
-            file_id = f"{uploaded_file.name}_{uploaded_file.size}"
-            if file_id not in st.session_state.uploaded_files_processed:
-                try:
-                    if uploaded_file.name.endswith(".xlsx"):
-                        xl = pd.ExcelFile(uploaded_file)
-                        sheet = (
-                            "Sheet2 Places – Overview"
-                            if "Sheet2 Places – Overview" in xl.sheet_names
-                            else xl.sheet_names[0]
-                        )
-                        extra_df = xl.parse(sheet)
-                    else:
-                        extra_df = pd.read_csv(uploaded_file)
-                    extra_df = load_and_normalize(extra_df)
+            display_cols = [
+                "glob_id", "pref_label", "alt_labels", "types",
+                "latitude", "longitude", "coord_certainty",
+                "parent_region_pref_label", "ccodes",
+            ]
+            with st.expander("📊 Sample data (first 20 rows)"):
+                st.dataframe(
+                    df[[c for c in display_cols if c in df.columns]].head(20),
+                    use_container_width=True,
+                )
+            st.divider()
 
-                    if st.session_state.locations_df is not None:
-                        st.session_state.locations_df = pd.concat(
-                            [st.session_state.locations_df, extra_df], ignore_index=True
-                        )
-                    else:
-                        st.session_state.locations_df = extra_df
+        with st.expander("👥 About the data"):
+            st.markdown(
+                "Data created by Dung Thuy Pham e.a. for the GLOBALISE project. "
+                "Available for download [here](https://doi.org/10.34894/UFFFNO)."
+                "\n"
+                "**Citation**:"
+            )
+            st.code(
+                'Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Bellarykar, Nikhil; Tabroni, Roni; Yeh, Chun-ting; Rabecca Mathai, Meenu; van Wissen, Leon; Houwer, Andy; Widmer, Marc; Kuruppath, Manjusha, 2026, "GLOBALISE - Places in the Dutch East India Company Archives (1602-1799)", https://doi.org/10.34894/UFFFNO, DataverseNL, V3'
+            )
 
-                    st.session_state.uploaded_files_processed.add(file_id)
-                    st.success(f"✅ Added {len(extra_df)} records. Total: {len(st.session_state.locations_df)}")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error loading file: {e}")
-            else:
-                st.info(f"'{uploaded_file.name}' already loaded.")
-
-        st.divider()
         st.markdown(
-            "**Expected format (v2)**\n\n"
-            "Multi-sheet XLSX. Primary sheet: `Sheet2 Places – Overview`.\n\n"
-            "Columns: `glob_id`, `pref_label`, `alt_labels` (pipe-separated), "
-            "`types`, `latitude`, `longitude`, `coord_certainty`, "
-            "`coord_remarks`, `overall_remarks`, `ccodes`, `geonames_id`, "
-            "`whg_id`, `amh_id`, `external_id`, `wikidata_id`, `tgn_id`, "
-            "`parent_region`, `parent_region_pref_label`"
+            "App by [Kay Pepping](https://github.com/KayWP/). "
+            "Bug reports welcome on Github."
         )
 
-    return selected_types, selected_ccodes, selected_cert
 
 
 def apply_filters(df, selected_types, selected_ccodes, selected_cert):
@@ -251,8 +225,11 @@ def render_detail_view(df, glob_id, back_label="← Back"):
         st.markdown(str(row["overall_remarks"]))
 
     st.divider()
+    st.markdown("**GLOBALISE transcriptions query**")
+    st.code(build_transcription_query(all_terms), language=None)
+
     st.markdown("**External links**")
-    links = [f"[🔎 Search Transcriptions]({build_transcription_url(all_terms)})"]
+    links = []
     if pd.notna(row["geonames_id"]) and str(row["geonames_id"]).startswith("http"):
         links.append(f"[🌍 GeoNames]({row['geonames_id']})")
     if pd.notna(row["whg_id"]) and str(row["whg_id"]).startswith("http"):
