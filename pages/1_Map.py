@@ -5,53 +5,28 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 from utils import (
-    init_session_state, apply_filters,
-    render_detail_view, render_footer, certainty_color,
+    init_session_state, sync_query_params, set_selected,
+    apply_filters, render_detail_view, render_sidebar,
+    render_footer, certainty_color,
 )
 
 st.set_page_config(page_title="Map — GLOBALISE Places", layout="wide")
 
 init_session_state()
+sync_query_params()
 df = st.session_state.locations_df
 
-# ── Sidebar ────────────────────────────────────────────────────────────────
-with st.sidebar:
-    if df is not None:
-        st.metric("Total records", f"{len(df):,}")
-        st.divider()
-
-        display_cols = [
-            "glob_id", "pref_label", "alt_labels", "types",
-            "latitude", "longitude", "coord_certainty",
-            "parent_region_pref_label", "ccodes",
-        ]
-        with st.expander("📊 Sample data (first 20 rows)"):
-            st.dataframe(
-                df[[c for c in display_cols if c in df.columns]].head(20),
-                use_container_width=True,
-            )
-        st.divider()
-
-    with st.expander("👥 About the data"):
-        st.markdown(
-            "Data created by Dung Thuy Pham e.a. for the GLOBALISE project. "
-            "Available for download [here](https://doi.org/10.34894/UFFFNO)."
-            "\n"
-            "**Citation**:"
-        )
-        st.code(
-            'Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Bellarykar, Nikhil; Tabroni, Roni; Yeh, Chun-ting; Rabecca Mathai, Meenu; van Wissen, Leon; Houwer, Andy; Widmer, Marc; Kuruppath, Manjusha, 2026, "GLOBALISE - Places in the Dutch East India Company Archives (1602-1799)", https://doi.org/10.34894/UFFFNO, DataverseNL, V3'
-        )
-
-    st.markdown(
-        "App by [Kay Pepping](https://github.com/KayWP/). "
-        "Bug reports welcome on Github."
-    )
+render_sidebar(df)
 
 st.title("🗺️ Map view")
 
 if df is None:
     st.warning("No data loaded. Please upload a file in the sidebar.", icon="📂")
+    st.stop()
+
+# ── Detail view (takes over the page) ─────────────────────────────────────
+if st.session_state.selected_glob_id is not None:
+    render_detail_view(df, st.session_state.selected_glob_id, back_label="← Back to map")
     st.stop()
 
 filtered_df = apply_filters(df, [], [], [])
@@ -109,7 +84,7 @@ deck = pdk.Deck(
             "📍 {latitude}, {longitude}<br/>"
             "Certainty: {coord_certainty}<br/>"
             "Region: {parent_region_pref_label}<br/>"
-            "<i style='font-size:11px;opacity:0.8'>Click to see details below</i>"
+            "<i style='font-size:11px;opacity:0.8'>Click to see details</i>"
         ),
         "style": {"color": "white", "fontSize": "13px"},
     },
@@ -121,28 +96,17 @@ st.caption("🟢 Certain &nbsp;&nbsp; 🟡 Approximate &nbsp;&nbsp; 🔴 Uncerta
 st.caption(f"Showing {len(map_df_pdk):,} locations")
 
 # ── Resolve clicked point ──────────────────────────────────────────────────
-clicked_id = None
 try:
     sel = event.selection
-    if hasattr(sel, "objects"):
-        objects = sel.objects or {}
-    elif isinstance(sel, dict):
-        objects = sel.get("objects", {})
-    else:
-        objects = {}
+    objects = sel.objects if hasattr(sel, "objects") else sel.get("objects", {})
     for rows in objects.values():
         if rows:
             clicked_id = rows[0].get("glob_id")
+            if clicked_id:
+                set_selected(clicked_id)
+                st.rerun()
             break
 except Exception:
     pass
-
-# ── Detail panel below the map ─────────────────────────────────────────────
-if clicked_id:
-    st.session_state.selected_glob_id = clicked_id
-
-if st.session_state.selected_glob_id is not None:
-    st.divider()
-    render_detail_view(df, st.session_state.selected_glob_id, back_label="✕ Close details")
 
 render_footer()

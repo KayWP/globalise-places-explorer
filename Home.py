@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 from utils import (
-    init_session_state, apply_filters, render_detail_view,
-    render_footer, search_locations, build_transcription_query,
+    init_session_state, sync_query_params, set_selected,
+    apply_filters, render_detail_view, render_sidebar,
+    search_locations, build_transcription_query,
 )
 
 st.set_page_config(page_title="Search — GLOBALISE Places", layout="wide")
@@ -21,41 +22,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 init_session_state()
+sync_query_params()
 df = st.session_state.locations_df
 
-# ── Sidebar ────────────────────────────────────────────────────────────────
-with st.sidebar:
-    if df is not None:
-        st.metric("Total records", f"{len(df):,}")
-        st.divider()
-
-        display_cols = [
-            "glob_id", "pref_label", "alt_labels", "types",
-            "latitude", "longitude", "coord_certainty",
-            "parent_region_pref_label", "ccodes",
-        ]
-        with st.expander("📊 Sample data (first 20 rows)"):
-            st.dataframe(
-                df[[c for c in display_cols if c in df.columns]].head(20),
-                use_container_width=True,
-            )
-        st.divider()
-
-    with st.expander("👥 About the data"):
-        st.markdown(
-            "Data created by Dung Thuy Pham e.a. for the GLOBALISE project. "
-            "Available for download [here](https://doi.org/10.34894/UFFFNO)."
-            "\n"
-            "**Citation**:"
-        )
-        st.code(
-            'Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Bellarykar, Nikhil; Tabroni, Roni; Yeh, Chun-ting; Rabecca Mathai, Meenu; van Wissen, Leon; Houwer, Andy; Widmer, Marc; Kuruppath, Manjusha, 2026, "GLOBALISE - Places in the Dutch East India Company Archives (1602-1799)", https://doi.org/10.34894/UFFFNO, DataverseNL, V3'
-        )
-
-    st.markdown(
-        "App by [Kay Pepping](https://github.com/KayWP/). "
-        "Bug reports welcome on Github."
-    )
+render_sidebar(df)
 
 # ── Guard ──────────────────────────────────────────────────────────────────
 st.title("🔍 Search places")
@@ -112,6 +82,7 @@ if search_query:
             score_pct = int(row["score"] * 100)
             cert = str(row["coord_certainty"]).lower()
             uncertain = cert in ("approximate", "uncertain")
+            all_terms = list({row["pref_label"]} | set(alts))
 
             with st.expander(f"**{row['pref_label']}** — {score_pct}% match"):
                 col_info, col_btn = st.columns([5, 1])
@@ -133,13 +104,12 @@ if search_query:
                         cert_icon = "🟢" if cert == "certain" else ("🟡" if cert == "approximate" else "🔴")
                         st.caption(f"{cert_icon} {lat:.5f}, {lon:.5f}")
 
-                    all_terms = list({row["pref_label"]} | set(alts))
                     st.markdown("**GLOBALISE transcriptions query**")
                     st.code(build_transcription_query(all_terms), language=None)
 
                 with col_btn:
                     if st.button("Full details", key=f"detail_{row['glob_id']}"):
-                        st.session_state.selected_glob_id = row["glob_id"]
+                        set_selected(row["glob_id"])
                         st.rerun()
 else:
     st.caption("Enter a search term above to find places.")

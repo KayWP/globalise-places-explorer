@@ -3,9 +3,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 import pandas as pd
+import pydeck as pdk
 from utils import (
-    init_session_state, apply_filters, render_detail_view,
-    render_footer, build_transcription_query,
+    init_session_state, sync_query_params, set_selected,
+    apply_filters, render_detail_view, render_sidebar,
+    build_transcription_query, certainty_color,
 )
 
 st.set_page_config(page_title="Location Types — GLOBALISE Places", layout="wide")
@@ -24,41 +26,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 init_session_state()
+sync_query_params()
 df = st.session_state.locations_df
 
-# ── Sidebar ────────────────────────────────────────────────────────────────
-with st.sidebar:
-    if df is not None:
-        st.metric("Total records", f"{len(df):,}")
-        st.divider()
-
-        display_cols = [
-            "glob_id", "pref_label", "alt_labels", "types",
-            "latitude", "longitude", "coord_certainty",
-            "parent_region_pref_label", "ccodes",
-        ]
-        with st.expander("📊 Sample data (first 20 rows)"):
-            st.dataframe(
-                df[[c for c in display_cols if c in df.columns]].head(20),
-                use_container_width=True,
-            )
-        st.divider()
-
-    with st.expander("👥 About the data"):
-        st.markdown(
-            "Data created by Dung Thuy Pham e.a. for the GLOBALISE project. "
-            "Available for download [here](https://doi.org/10.34894/UFFFNO)."
-            "\n"
-            "**Citation**:"
-        )
-        st.code(
-            'Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Bellarykar, Nikhil; Tabroni, Roni; Yeh, Chun-ting; Rabecca Mathai, Meenu; van Wissen, Leon; Houwer, Andy; Widmer, Marc; Kuruppath, Manjusha, 2026, "GLOBALISE - Places in the Dutch East India Company Archives (1602-1799)", https://doi.org/10.34894/UFFFNO, DataverseNL, V3'
-        )
-
-    st.markdown(
-        "App by [Kay Pepping](https://github.com/KayWP/). "
-        "Bug reports welcome on Github."
-    )
+render_sidebar(df)
 
 # ── Guard ──────────────────────────────────────────────────────────────────
 st.title("🏷️ Location Types")
@@ -80,7 +51,6 @@ if not all_types:
     st.info("No location types found in the data.")
     st.stop()
 
-# Count locations per type for the selector label
 type_counts = {
     t: int(df["_type_list"].apply(lambda lst: t in lst).sum())
     for t in all_types
@@ -109,6 +79,82 @@ if selected_cert:
 type_df = type_df.sort_values("pref_label", ignore_index=True)
 
 st.markdown(f"### {len(type_df):,} location(s) of type **{selected_type}**")
+
+# ── Map ────────────────────────────────────────────────────────────────────
+map_df = type_df.copy()
+map_df = map_df[
+    pd.to_numeric(map_df["latitude"], errors="coerce").notna()
+    & pd.to_numeric(map_df["longitude"], errors="coerce").notna()
+]
+map_df["latitude"] = pd.to_numeric(map_df["latitude"])
+map_df["longitude"] = pd.to_numeric(map_df["longitude"])
+map_df = map_df[~((map_df["latitude"] == 0) & (map_df["longitude"] == 0))]
+map_df["color"] = map_df["coord_certainty"].apply(certainty_color)
+
+if not map_df.empty:
+    pdk_cols = [
+        "glob_id", "pref_label", "types", "latitude", "longitude",
+        "coord_certainty", "parent_region_pref_label", "color",
+    ]
+    map_df_pdk = map_df[[c for c in pdk_cols if c in map_df.columns]]
+
+    layer = pdk.Layer(
+        "ScatterplotLayer",
+        id="type-layer",
+        data=map_df_pdk,
+        get_position=["longitude", "latitude"],
+        get_color="color",
+        get_radius=5000,
+        radius_min_pixels=4,
+        radius_max_pixels=20,
+        pickable=True,
+        auto_highlight=True,
+    )
+    view_state = pdk.ViewState(
+        latitude=map_df["latitude"].mean(),
+        longitude=map_df["longitude"].mean(),
+        zoom=2,
+        pitch=0,
+    )
+    deck = pdk.Deck(
+        layers=[layer],
+        initial_view_state=view_state,
+        tooltip={
+            "html": (
+                "<b>{pref_label}</b><br/>"
+                "<i>{types}</i><br/>"
+                "📍 {latitude}, {longitude}<br/>"
+                "Certainty: {coord_certainty}<br/>"
+                "Region: {parent_region_pref_label}<br/>"
+                "<i style='font-size:11px;opacity:0.8'>Click to see details below</i>"
+            ),
+            "style": {"color": "white", "fontSize": "13px"},
+        },
+    )
+
+    event = st.pydeck_chart(deck, on_select="rerun", selection_mode="single-object")
+    st.caption("🟢 Certain &nbsp;&nbsp; 🟡 Approximate &nbsp;&nbsp; 🔴 Uncertain", unsafe_allow_html=True)
+
+    unmapped = len(type_df) - len(map_df)
+    note = f"Showing {len(map_df):,} mapped locations"
+    if unmapped:
+        note += f" · {unmapped:,} location(s) have no coordinates and are not shown"
+    st.caption(note)
+
+    # Resolve map click → detail view
+    try:
+        sel = event.selection
+        objects = sel.objects if hasattr(sel, "objects") else sel.get("objects", {})
+        for rows in objects.values():
+            if rows:
+                set_selected(rows[0].get("glob_id"))
+                st.rerun()
+    except Exception:
+        pass
+else:
+    st.info("No mappable coordinates for this type / filter combination.")
+
+st.divider()
 
 # ── Results list ───────────────────────────────────────────────────────────
 if type_df.empty:
@@ -146,5 +192,5 @@ else:
 
             with col_btn:
                 if st.button("Full details", key=f"detail_{row['glob_id']}"):
-                    st.session_state.selected_glob_id = row["glob_id"]
+                    set_selected(row["glob_id"])
                     st.rerun()

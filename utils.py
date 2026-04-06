@@ -107,8 +107,37 @@ def init_session_state():
         st.session_state.selected_glob_id = None
 
 
-def render_sidebar():
-    """Renders sidebar filters + uploader. Returns (selected_types, selected_ccodes, selected_cert)."""
+# ─────────────────────────────────────────────
+# URL / query-param helpers
+# ─────────────────────────────────────────────
+
+def sync_query_params():
+    """Read ?glob_id=... from the URL into session state.
+    Call once per page after init_session_state(), to support
+    shareable URLs and consistent browser back-button behaviour."""
+    url_id = st.query_params.get("glob_id", None)
+    if url_id and url_id != st.session_state.selected_glob_id:
+        st.session_state.selected_glob_id = url_id
+    elif not url_id and st.session_state.selected_glob_id:
+        # URL was cleared (e.g. browser back button) — honour it
+        st.session_state.selected_glob_id = None
+
+
+def set_selected(glob_id):
+    """Select a location: write to session state and push ?glob_id= to the URL."""
+    st.session_state.selected_glob_id = glob_id
+    if glob_id is None:
+        st.query_params.clear()
+    else:
+        st.query_params["glob_id"] = glob_id
+
+
+# ─────────────────────────────────────────────
+# Shared sidebar
+# ─────────────────────────────────────────────
+
+def render_sidebar(df):
+    """Renders the standard informational sidebar. Pass the loaded dataframe (or None)."""
     with st.sidebar:
         if df is not None:
             st.metric("Total records", f"{len(df):,}")
@@ -134,14 +163,17 @@ def render_sidebar():
                 "**Citation**:"
             )
             st.code(
-                'Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Bellarykar, Nikhil; Tabroni, Roni; Yeh, Chun-ting; Rabecca Mathai, Meenu; van Wissen, Leon; Houwer, Andy; Widmer, Marc; Kuruppath, Manjusha, 2026, "GLOBALISE - Places in the Dutch East India Company Archives (1602-1799)", https://doi.org/10.34894/UFFFNO, DataverseNL, V3'
+                'Pham, Thuy Dung; Nijman, Brecht; Land, Ruben; Bellarykar, Nikhil; Tabroni, Roni; '
+                'Yeh, Chun-ting; Rabecca Mathai, Meenu; van Wissen, Leon; Houwer, Andy; Widmer, Marc; '
+                'Kuruppath, Manjusha, 2026, "GLOBALISE - Places in the Dutch East India Company '
+                'Archives (1602-1799)", https://doi.org/10.34894/UFFFNO, DataverseNL, V3'
             )
 
         st.markdown(
             "App by [Kay Pepping](https://github.com/KayWP/). "
-            "Bug reports welcome on Github."
+            "Bug reports welcome on Github. "
+            "Explore more on [VOCData.nl](https://vocdata.nl/)"
         )
-
 
 
 def apply_filters(df, selected_types, selected_ccodes, selected_cert):
@@ -160,8 +192,12 @@ def apply_filters(df, selected_types, selected_ccodes, selected_cert):
     return filtered
 
 
+# ─────────────────────────────────────────────
+# Detail view
+# ─────────────────────────────────────────────
+
 def render_detail_view(df, glob_id, back_label="← Back"):
-    """Renders the detail panel for a given glob_id. Returns True if 'back' was clicked."""
+    """Renders the full detail panel for a given glob_id."""
     row = df[df["glob_id"] == glob_id].iloc[0]
     alts = row["_alt_list"]
     types = row["_type_list"]
@@ -169,7 +205,7 @@ def render_detail_view(df, glob_id, back_label="← Back"):
     all_terms = list({row["pref_label"]} | set(alts))
 
     if st.button(back_label):
-        st.session_state.selected_glob_id = None
+        set_selected(None)
         st.rerun()
 
     st.markdown(f"## {row['pref_label']}")
@@ -246,7 +282,8 @@ def render_detail_view(df, glob_id, back_label="← Back"):
         links.append(f"[🏛️ Getty TGN]({tgn_url})")
     if pd.notna(row["external_id"]) and str(row["external_id"]).startswith("http"):
         links.append(f"[🔗 External]({row['external_id']})")
-    st.markdown("  ·  ".join(links))
+    if links:
+        st.markdown("  ·  ".join(links))
 
 
 def render_footer():
