@@ -170,6 +170,8 @@ def render_sidebar(df):
             )
 
         st.markdown(
+            "Be sure to cite permanent, F.A.I.R. data, not apps!"
+            ""
             "App by [Kay Pepping](https://github.com/KayWP/). "
             "Bug reports welcome on Github. "
             "Explore more on [VOCData.nl](https://vocdata.nl/)"
