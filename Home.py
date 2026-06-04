@@ -94,6 +94,7 @@ if search_query:
                         st.markdown(" ".join(
                             f"<span class='type-badge'>{t}</span>" for t in types
                         ), unsafe_allow_html=True)
+                    st.code(row["glob_id"])
                     if alts:
                         st.caption(f"Also known as: {', '.join(alts[:5])}{'…' if len(alts) > 5 else ''}")
                     if uncertain:
