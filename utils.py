@@ -63,7 +63,7 @@ def build_transcription_url(terms):
 
 def build_transcription_query(terms):
     """Returns a query string with all labels joined by AND."""
-    return " AND ".join(f'"{t}"' for t in terms)
+    return " OR ".join(f'"{t}"' for t in terms)
 
 
 def load_and_normalize(df: pd.DataFrame) -> pd.DataFrame:
